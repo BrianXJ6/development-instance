@@ -1,0 +1,131 @@
+#!/bin/sh
+DIVIDER="#########################################################################"
+TIMEOUT=30    # Maximum wait time in seconds for function execution
+DB_INTERVAL=3 # Interval between attempts
+DB_ELAPSED=0  # Database ELAPSE start value
+
+# Function to handle the Composer execution process
+composer_install() {
+    if [ "$1" = "timeout" ]; then
+        timeout $TIMEOUT su-exec sail composer update
+    else
+        su-exec sail composer update
+    fi
+
+    if [ $? -eq 0 ]; then
+        echo $DIVIDER
+        echo "Packages via COMPOSER installed successfully!"
+        echo $DIVIDER
+    else
+        composer_install
+    fi
+    return $?
+}
+
+# Function to handle the NPM execution process
+npm_install() {
+    if [ "$1" = "timeout" ]; then
+        timeout $TIMEOUT su-exec sail npm i &
+        BUILD_PID=$!
+    else
+        su-exec sail npm i &
+        BUILD_PID=$!
+    fi
+
+    while kill -0 $BUILD_PID 2>/dev/null; do
+        echo "NPM is running, this process may take a while, please wait..."
+        sleep 10
+    done
+    wait $BUILD_PID
+
+    if [ $? -eq 0 ]; then
+        echo $DIVIDER
+        echo "Packages via NPM installed successfully!"
+        echo $DIVIDER
+    else
+        npm_install
+    fi
+    return $?
+}
+
+# Function to handle the BUILD of application process
+build_app() {
+    if [ "$1" = "timeout" ]; then
+        timeout $TIMEOUT su-exec sail npm run build
+    else
+        su-exec sail npm run build
+    fi
+
+    if [ $? -eq 0 ]; then
+        echo $DIVIDER
+        echo "Application build successfully!"
+        echo $DIVIDER
+    else
+        build_app
+    fi
+    return $?
+}
+
+if [ ! -d /var/www/vendor ]; then
+    echo $DIVIDER
+    echo "Executing COMPOSER to download packages..."
+    echo $DIVIDER
+    composer_install "timeout"
+fi
+
+if [ ! -f /var/www/.env ]; then
+    echo $DIVIDER
+    echo "Executing COPY of .env.example file and generate app key..."
+    echo $DIVIDER
+    su-exec sail cp /var/www/.env.example /var/www/.env
+    php artisan key:generate
+fi
+
+if [ ! -d /var/www/node_modules ]; then
+    echo $DIVIDER
+    echo "Executing NPM to download packages..."
+    echo $DIVIDER
+    npm_install "timeout"
+fi
+
+if [ ! -d /var/www/public/build ]; then
+    echo $DIVIDER
+    echo "Executing the initial build of the application..."
+    echo $DIVIDER
+    build_app "timeout"
+fi
+
+echo $DIVIDER
+echo "Preparing database..."
+echo $DIVIDER
+until mariadb-admin ping --host=$DB_HOST --ssl-verify-server-cert=FALSE --user=$DB_USER --password=$DB_PASSWORD --silent; do
+    if [ "$DB_ELAPSED" -ge "$TIMEOUT" ]; then
+        echo $DIVIDER
+        echo "Timeout reached: database service is not available!"
+        echo "Proceeding without database service..."
+        echo $DIVIDER
+        break
+    fi
+
+    echo "Database is unavailable, please wait..."
+    sleep $DB_INTERVAL
+    DB_ELAPSED=$((DB_ELAPSED + DB_INTERVAL))
+done
+
+# Running migrations if necessary...
+php artisan migrate:status | grep -q 'ERROR'
+if [ $? -eq 0 ]; then
+    echo $DIVIDER
+    echo "Running migrations and populating databases..."
+    echo $DIVIDER
+    php artisan migrate --seed
+fi
+
+chown -R sail:sail /var/www
+chmod -R 775 /var/www/storage
+
+echo $DIVIDER
+echo "Initialization process completed successfully!!!"
+echo $DIVIDER
+
+exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
