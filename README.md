@@ -19,12 +19,12 @@ Production-grade local Docker environment: **PHP 8.5 FPM on Alpine**, **Nginx**,
 
 ```text
 .
-├── Dockerfile             # Image definition (single stage, dev-oriented)
-├── start-container        # Entrypoint: first-run bootstrap + supervisord
-├── supervisord.conf       # nginx + php-fpm + queue + scheduler
-├── nginx.conf             # Dev-tuned Nginx (gzip, buffering, 100M uploads)
-├── php.ini                # Dev php.ini overrides (errors on, PCOV, timezone)
-├── xdebug.ini             # Xdebug: develop,debug,coverage via host.docker.internal
+├── Dockerfile                 # Image definition (single stage, dev-oriented)
+├── start-container            # Entrypoint: first-run bootstrap + supervisord
+├── supervisord.conf           # nginx + php-fpm + queue + scheduler
+├── nginx.conf                 # Dev-tuned Nginx (gzip, buffering, 100M uploads)
+├── php.ini                    # Dev php.ini overrides (errors on, PCOV, timezone)
+├── xdebug.ini                 # Xdebug: develop,debug,coverage via host.docker.internal
 └── mysql/
     └── create-testing-db.sh   # Auto-creates the `testing` DB (docker-entrypoint-initdb.d)
 ```
